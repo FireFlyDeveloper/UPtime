@@ -14,17 +14,8 @@ app.get('/hello-world', (_req, res) => {
 });
 
 app.post('/health', (req, res) => {
-    const { isOnline, passsword } = req.body;
-
-    if (passsword !== process.env.PASSWORD) {
-        return res.status(401).send('Unauthorized');
-    }
-
-    if (isOnline) {
-        console.log("Server is marked as ONLINE");
-    } else {
-        console.log("Server is marked as OFFLINE");
-    }
+    console.log("Received health status update:", req.body);
+    res.status(200).send('Health status received');
 });
 
 app.listen(port, () => {
