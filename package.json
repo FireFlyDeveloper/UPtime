@@ -1,0 +1,23 @@
+{
+  "name": "uptime",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000U\u0000P\u0000t\u0000i\u0000m\u0000e\u0000\r\u0000 \u0000#\u0000 \u0000U\u0000P\u0000t\u0000i\u0000m\u0000e\u0000\r\u0000 \u0000",
+  "homepage": "https://github.com/FireFlyDeveloper/UPtime#readme",
+  "bugs": {
+    "url": "https://github.com/FireFlyDeveloper/UPtime/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FireFlyDeveloper/UPtime.git"
+  },
+  "license": "ISC",
+  "author": "FireFlyDeveloper",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
