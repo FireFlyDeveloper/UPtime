@@ -42,7 +42,7 @@ app.get("/auth-url", (_req, res) => {
     access_type: "offline",
     prompt: "consent",
     scope: [
-      "https://www.googleapis.com/auth/gmail.send"
+      "https://mail.google.com/",
     ]
   });
 
