@@ -1,8 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const nodemailer = require("nodemailer");
 const { google } = require("googleapis");
+const { Buffer } = require("buffer");
 
 const app = express();
 app.use(cors());
@@ -16,40 +16,55 @@ let bootStartTime = null;
 let bootEmailSent = false;
 
 const oAuth2Client = new google.auth.OAuth2(
-  process.env.CLIENT_ID,
-  process.env.CLIENT_SECRET,
-  process.env.REDIRECT_URI
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  process.env.GMAIL_REDIRECT_URI
 );
 oAuth2Client.setCredentials({
-  refresh_token: process.env.REFRESH_TOKEN
+  refresh_token: process.env.GMAIL_REFRESH_TOKEN
 });
 
-async function sendEmail(subject, textContent, htmlContent) {
+async function getAccessToken() {
+  const { token } = await oAuth2Client.getAccessToken();
+  return token;
+}
+
+async function sendEmail(subject, htmlContent) {
   try {
-    const accessToken = await oAuth2Client.getAccessToken();
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        type: "OAuth2",
-        user: process.env.EMAIL_USER,
-        clientId: process.env.CLIENT_ID,
-        clientSecret: process.env.CLIENT_SECRET,
-        refreshToken: process.env.REFRESH_TOKEN,
-        accessToken: accessToken.token
-      }
+    const accessToken = await getAccessToken();
+    const from = process.env.EMAIL_USER;
+    const to = process.env.EMAIL_TARGET;
+
+    const message =
+      `From: ${from}\r\n` +
+      `To: ${to}\r\n` +
+      `Subject: ${subject}\r\n` +
+      `Content-Type: text/html; charset="UTF-8"\r\n` +
+      `\r\n` +
+      htmlContent;
+
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ raw: encodedMessage })
     });
 
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_TARGET,
-      subject,
-      text: textContent,
-      html: htmlContent
-    });
-
-    console.log(`[EMAIL] Sent: ${subject}`);
-  } catch (err) {
-    console.log("[EMAIL ERROR]", err);
+    if (!res.ok) {
+      const err = await res.text();
+      console.log(`[EMAIL ERROR] Gmail API error: ${res.status} — ${err}`);
+    } else {
+      const data = await res.json();
+      console.log(`[EMAIL] Sent: ${subject}, Message ID: ${data.id}`);
+    }
+  } catch (e) {
+    console.log("[EMAIL ERROR]", e.message);
   }
 }
 
@@ -58,13 +73,13 @@ setInterval(() => {
 
   const diff = Date.now() - lastHeartbeat;
   console.log(`[CHECK] ms since last heartbeat: ${diff}`);
+  if (bootStartTime) console.log(`[BOOT] ms since boot attempt: ${Date.now() - bootStartTime}`);
 
   if (diff > 40000 && isDeviceOnline !== false) {
     isDeviceOnline = false;
     console.log("[STATUS] Device reports OFFLINE");
     sendEmail(
       "Device Offline",
-      "The device stopped sending heartbeat.",
       `<h2 style="color:red;">Device Offline</h2><p>The device has stopped sending heartbeat at ${new Date().toLocaleString()}.</p>`
     );
     bootStartTime = null;
@@ -75,11 +90,11 @@ setInterval(() => {
     console.log("[BOOT] Boot failed after 2 minutes");
     sendEmail(
       "Boot Failed",
-      "Device failed to boot after 2 minutes.",
       `<h2 style="color:red;">Boot Failed</h2><p>The device failed to boot after 2 minutes (at ${new Date().toLocaleString()}).</p>`
     );
     bootEmailSent = true;
   }
+
 }, 10000);
 
 app.get("/hello-world", (_req, res) => {
@@ -87,9 +102,10 @@ app.get("/hello-world", (_req, res) => {
 });
 
 app.post("/health", (req, res) => {
-  const data = req.body;
   console.log("[ROUTE] POST /health");
-  console.log("[BODY]", data);
+  console.log("[BODY]", req.body);
+
+  const data = req.body;
 
   if (!data || !data.password || data.password !== process.env.PASSWORD) {
     return res.status(401).send("Unauthorized: Incorrect password");
@@ -100,14 +116,13 @@ app.post("/health", (req, res) => {
   }
 
   lastHeartbeat = Date.now();
-  console.log(`[HEARTBEAT] Received at ${new Date().toLocaleString()}`);
+  console.log(`[HEARTBEAT] Received at ${new Date(lastHeartbeat).toLocaleString()}`);
 
   if (data.isOnline) {
     if (!isDeviceOnline && bootStartTime) {
       console.log("[BOOT] Device booted successfully");
       sendEmail(
         "Boot Success",
-        "Device successfully booted and is online.",
         `<h2 style="color:green;">Boot Success</h2><p>Device successfully booted and is online at ${new Date().toLocaleString()}.</p>`
       );
       bootStartTime = null;
@@ -116,21 +131,19 @@ app.post("/health", (req, res) => {
     isDeviceOnline = true;
     bootStartTime = null;
     bootEmailSent = false;
-    console.log("[STATUS] Device reports ONLINE");
+    console.log("[STATUS] Device is online");
   } else {
     if (isDeviceOnline !== false) {
-      console.log("[BOOT] Starting boot attempt...");
+      console.log("[STATUS] Device reports OFFLINE → boot attempt");
       if (!bootStartTime) {
         bootStartTime = Date.now();
         sendEmail(
           "Boot Attempt",
-          "Device reported offline. Attempting to boot...",
           `<h2 style="color:orange;">Boot Attempt</h2><p>Device reported offline at ${new Date().toLocaleString()}. Attempting to boot...</p>`
         );
       }
     }
     isDeviceOnline = false;
-    console.log("[STATUS] Device reports OFFLINE");
   }
 
   res.status(200).send("Health status received");
