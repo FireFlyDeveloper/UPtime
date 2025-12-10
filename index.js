@@ -14,7 +14,8 @@ app.get('/hello-world', (_req, res) => {
 });
 
 app.post('/health', (req, res) => {
-    console.log("Received health status update:", req.body);
+    const data = JSON.parse(JSON.stringify(req.body));
+    console.log("Parsed data:", data);
     res.status(200).send('Health status received');
 });
 
