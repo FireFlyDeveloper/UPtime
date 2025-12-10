@@ -15,6 +15,8 @@ app.get('/hello-world', (_req, res) => {
 app.post('/health', (req, res) => {
   const data = req.body;
 
+  console.log(process.env.PASSWORD);
+
   if (!data || !data.password || data.password !== process.env.PASSWORD) {
     return res.status(401).send('Unauthorized: Incorrect password');
   }
