@@ -24,47 +24,76 @@ oAuth2Client.setCredentials({
   refresh_token: process.env.GMAIL_REFRESH_TOKEN
 });
 
+function formatPhilippineTime(date = new Date()) {
+  return date.toLocaleString("en-PH", { timeZone: "Asia/Manila", hour12: false });
+}
+
 async function getAccessToken() {
   const { token } = await oAuth2Client.getAccessToken();
   return token;
 }
 
-async function sendEmail(subject, htmlContent) {
-  try {
-    const accessToken = await getAccessToken();
-    const from = process.env.EMAIL_USER;
-    const to = process.env.EMAIL_TARGET;
+function buildEmailHtml(title, message) {
+  return `
+  <div style="max-width:600px; margin: 30px auto; padding:20px; font-family:Arial,sans-serif; border:1px solid #ddd; border-radius:8px; background-color:#f9f9f9; text-align:center;">
+    <a href="https://github.com/FireFlyDeveloper" target="_blank">
+      <img src="https://avatars.githubusercontent.com/u/153905107?v=4" alt="GitHub Profile" style="width:80px; height:80px; border-radius:50%; margin-bottom:15px;" />
+    </a>
+    <h2 style="color:#333;">${title}</h2>
+    <p style="color:#555; font-size:14px;">${message}</p>
+    <p style="font-size:12px; color:#999; margin-top:20px;">Timestamp: ${formatPhilippineTime()}</p>
+  </div>
+  `;
+}
 
-    const message =
-      `From: ${from}\r\n` +
-      `To: ${to}\r\n` +
-      `Subject: ${subject}\r\n` +
-      `Content-Type: text/html; charset="UTF-8"\r\n` +
-      `\r\n` +
-      htmlContent;
+async function sendEmail(subject, htmlContent, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const accessToken = await getAccessToken();
+      const from = process.env.EMAIL_USER;
+      const to = process.env.EMAIL_TARGET;
 
-    const encodedMessage = Buffer.from(message)
-      .toString('base64')
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const message =
+        `From: ${from}\r\n` +
+        `To: ${to}\r\n` +
+        `Subject: ${subject}\r\n` +
+        `Content-Type: text/html; charset="UTF-8"\r\n` +
+        `\r\n` +
+        htmlContent;
 
-    const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ raw: encodedMessage })
-    });
+      const encodedMessage = Buffer.from(message)
+        .toString('base64')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-    if (!res.ok) {
-      const err = await res.text();
-      console.log(`[EMAIL ERROR] Gmail API error: ${res.status} — ${err}`);
-    } else {
-      const data = await res.json();
-      console.log(`[EMAIL] Sent: ${subject}, Message ID: ${data.id}`);
+      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ raw: encodedMessage })
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        console.log(`[EMAIL ERROR] Attempt ${attempt}: Gmail API error: ${res.status} — ${err}`);
+        if (attempt < retries) {
+          console.log(`[EMAIL] Retrying in 2 seconds...`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+      } else {
+        const data = await res.json();
+        console.log(`[EMAIL] Sent: ${subject}, Message ID: ${data.id}`);
+        break;
+      }
+    } catch (e) {
+      console.log(`[EMAIL ERROR] Attempt ${attempt}: ${e.message}`);
+      if (attempt < retries) {
+        console.log(`[EMAIL] Retrying in 2 seconds...`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
-  } catch (e) {
-    console.log("[EMAIL ERROR]", e.message);
   }
 }
 
@@ -79,8 +108,11 @@ setInterval(() => {
     isDeviceOnline = false;
     console.log("[STATUS] Device reports OFFLINE");
     sendEmail(
-      "Device Offline",
-      `<h2 style="color:red;">Device Offline</h2><p>The device has stopped sending heartbeat at ${new Date().toLocaleString()}.</p>`
+      "Device Offline Notification",
+      buildEmailHtml(
+        "Device Offline",
+        "The monitored device has stopped sending heartbeat signals. Please investigate to ensure normal operation."
+      )
     );
     bootStartTime = null;
     bootEmailSent = false;
@@ -89,8 +121,11 @@ setInterval(() => {
   if (bootStartTime && Date.now() - bootStartTime > 120000 && !bootEmailSent) {
     console.log("[BOOT] Boot failed after 2 minutes");
     sendEmail(
-      "Boot Failed",
-      `<h2 style="color:red;">Boot Failed</h2><p>The device failed to boot after 2 minutes (at ${new Date().toLocaleString()}).</p>`
+      "Device Boot Failure",
+      buildEmailHtml(
+        "Boot Failure",
+        "The device failed to boot successfully after 2 minutes. Immediate attention may be required."
+      )
     );
     bootEmailSent = true;
   }
@@ -116,14 +151,17 @@ app.post("/health", (req, res) => {
   }
 
   lastHeartbeat = Date.now();
-  console.log(`[HEARTBEAT] Received at ${new Date(lastHeartbeat).toLocaleString()}`);
+  console.log(`[HEARTBEAT] Received at ${formatPhilippineTime(lastHeartbeat)}`);
 
   if (data.isOnline) {
     if (!isDeviceOnline && bootStartTime) {
       console.log("[BOOT] Device booted successfully");
       sendEmail(
-        "Boot Success",
-        `<h2 style="color:green;">Boot Success</h2><p>Device successfully booted and is online at ${new Date().toLocaleString()}.</p>`
+        "Device Boot Successful",
+        buildEmailHtml(
+          "Boot Success",
+          "The device has successfully booted and is online."
+        )
       );
       bootStartTime = null;
       bootEmailSent = false;
@@ -138,8 +176,11 @@ app.post("/health", (req, res) => {
       if (!bootStartTime) {
         bootStartTime = Date.now();
         sendEmail(
-          "Boot Attempt",
-          `<h2 style="color:orange;">Boot Attempt</h2><p>Device reported offline at ${new Date().toLocaleString()}. Attempting to boot...</p>`
+          "Device Boot Attempt",
+          buildEmailHtml(
+            "Boot Attempt",
+            "The device reported offline. Attempting to initiate boot..."
+          )
         );
       }
     }
