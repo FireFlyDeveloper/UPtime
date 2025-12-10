@@ -21,7 +21,7 @@ let bootEmailSent = false;
    GOOGLE AUTH SETUP
 ========================= */
 console.log("[INIT] Setting up Google OAuth2 transport...");
-console.log(process.env.REFRESH_TOKEN);
+
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.CLIENT_ID,
