@@ -14,9 +14,14 @@ app.get('/hello-world', (_req, res) => {
 });
 
 app.post('/health', (req, res) => {
-    const data = JSON.parse(JSON.stringify(req.body));
-    console.log("Parsed data:", data);
-    res.status(200).send('Health status received');
+  const data = JSON.parse(JSON.stringify(req.body));
+
+  if (data && data.password && data.password !== process.env.PASSWORD) {
+    return res.status(401).send('Unauthorized: Incorrect password');
+  }
+
+  console.log("Health data received:", data);
+  res.status(200).send('Health status received');
 });
 
 app.listen(port, () => {
