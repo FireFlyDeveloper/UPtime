@@ -104,7 +104,7 @@ setInterval(() => {
   console.log(`[CHECK] ms since last heartbeat: ${diff}`);
   if (bootStartTime) console.log(`[BOOT] ms since boot attempt: ${Date.now() - bootStartTime}`);
 
-  if (diff > 40000 && isDeviceOnline !== false) {
+  if (diff > 90000 && isDeviceOnline !== false) {
     isDeviceOnline = false;
     console.log("[STATUS] Device reports OFFLINE");
     sendEmail(
